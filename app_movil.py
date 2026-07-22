@@ -4,8 +4,8 @@ from supabase import create_client, Client
 # Configuración de la página para celulares
 st.set_page_config(page_title="Consulta de Stock", page_icon="📦", layout="centered")
 
-SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
-SUPABASE_KEY = "sb_secret_w1UfLTj-U7oyzedV1Jy0OQ_OybCcdSy"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.title("📦 Consulta de Stock Remota")
