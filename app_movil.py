@@ -1,77 +1,94 @@
 import streamlit as st
 from supabase import create_client, Client
 
-# Configuración de la página para celulares
-st.set_page_config(page_title="Consulta de Stock", page_icon="📦", layout="centered")
+st.set_page_config(page_title="MendoMedica Móvil", page_icon="📱", layout="centered")
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
+SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
 
-st.title("📦 Consulta de Stock Remota")
-st.write("Busca productos en tiempo real desde tu celular.")
+@st.cache_resource
+def init_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Sistema de Login Simple en la Web
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
+try:
+    supabase: Client = init_supabase()
+except Exception as e:
+    st.error(f"Error de conexión: {e}")
+    st.stop()
 
-if not st.session_state['autenticado']:
-    with st.form("login_form"):
-        email = st.text_input("Correo Electrónico")
-        password = st.text_input("Contraseña", type="password")
-        boton_login = st.form_submit_button("Iniciar Sesión")
-        
-        if boton_login:
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                if res.user:
-                    # Verificar que el usuario exista en perfiles
-                    query = supabase.table("perfiles").select("rol").eq("id", res.user.id).execute()
-                    if query.data:
-                        st.session_state['autenticado'] = True
-                        st.session_state['user_email'] = email
-                        st.rerun()
-            except Exception:
-                st.error("❌ Credenciales incorrectas.")
-else:
-    st.success(f"Conectado como: {st.session_state['user_email']}")
-    if st.button("Cerrar Sesión"):
-        st.session_state['autenticado'] = False
-        st.rerun()
+# Inicializar estado de sesión
+if "usuario" not in st.session_state:
+    st.session_state["usuario"] = None
 
-    # --- BUSCADOR EN TIEMPO REAL ---
-    criterio = st.text_input("🔍 Busca por Nombre o Código de Barras:")
+# ==========================================
+# PANTALLA DE LOGIN
+# ==========================================
+if not st.session_state["usuario"]:
+    st.title("📱 MendoMedica Stock")
+    st.subheader("Iniciar Sesión")
     
-    try:
-        # Traer los productos de Supabase
-        query = supabase.table("productos").select("codigo, codigo_barras, nombre, precio, stock_actual, ubicacion, responsable").execute()
-        productos = query.data
+    with st.form("login_form"):
+        email = st.text_input("Correo Electrónico").strip().lower()
+        password = st.text_input("Contraseña", type="password").strip()
+        btn_login = st.form_submit_button("Iniciar Sesión", use_container_width=True)
         
-        if productos:
-            # Filtrar según lo que escriba el usuario en el celular
-            filtrados = [
-                p for p in productos 
-                if criterio.lower() in str(p.get('nombre', '')).lower() 
-                or criterio in str(p.get('codigo_barras', ''))
-                or criterio in str(p.get('codigo', ''))
-            ]
-            
-            if filtrados:
-                for prod in filtrados:
-                    # Crear una tarjeta visual para cada producto (Ideal para celulares)
-                    with st.container(border=True):
-                        st.subheader(f"🔹 {prod.get('nombre')}")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric(label="Stock Actual", value=prod.get('stock_actual'))
-                            st.write(f"**Ubicación:** {prod.get('ubicacion') or 'Sin asignar'}")
-                        with col2:
-                            st.metric(label="Precio", value=f"${prod.get('precio'):.2f}")
-                            st.write(f"**Responsable:** {prod.get('responsable') or 'Sin asignar'}")
+        if btn_login:
+            if not email or not password:
+                st.warning("Ingresa tu correo y contraseña.")
             else:
-                st.info("No se encontraron productos que coincidan con la búsqueda.")
-        else:
-            st.warning("No hay productos registrados en el inventario.")
-            
-    except Exception as e:
-        st.error(f"Error de conexión: {e}")
+                try:
+                    # 1. Buscar en la tabla de Usuarios Móviles
+                    res_movil = supabase.table("usuarios_movil").select("*").eq("email", email).eq("password", password).execute()
+                    
+                    if res_movil.data:
+                        user = res_movil.data[0]
+                        user["rol"] = "Usuario Móvil"
+                        st.session_state["usuario"] = user
+                        st.rerun()
+                    else:
+                        # 2. Si no está en movil, buscar en Administradores
+                        res_admin = supabase.table("administradores").select("*").eq("email", email).eq("password", password).execute()
+                        if res_admin.data:
+                            user = res_admin.data[0]
+                            user["rol"] = "Administrador"
+                            st.session_state["usuario"] = user
+                            st.rerun()
+                        else:
+                            st.error("❌ Credenciales incorrectas.")
+                except Exception as err:
+                    st.error(f"Error al verificar cuenta: {err}")
+    st.stop()
+
+# ==========================================
+# MENÚ PRINCIPAL POST-LOGIN
+# ==========================================
+user_actual = st.session_state["usuario"]
+
+st.title(f"👋 Hola, {user_actual.get('nombre', 'Usuario')}")
+st.caption(f"Rol: {user_actual.get('rol', 'Usuario')} | Cuenta: {user_actual.get('email', '')}")
+
+if st.button("🚪 Cerrar Sesión"):
+    st.session_state["usuario"] = None
+    st.rerun()
+
+st.markdown("---")
+
+# Opción de consultar / registrar movimientos desde el celular
+st.subheader("📦 Consultar Inventario")
+busqueda = st.text_input("🔍 Buscar producto por nombre o código:")
+
+try:
+    prods = supabase.table("productos").select("*").execute().data
+    if prods:
+        if busqueda:
+            prods = [p for p in prods if busqueda.lower() in str(p.get("nombre", "")).lower() or busqueda.lower() in str(p.get("codigo", "")).lower()]
+        
+        for p in prods:
+            with st.container():
+                st.markdown(f"**{p.get('nombre')}** (Cód: `{p.get('codigo')}`)")
+                st.write(f"Stock actual: **{p.get('stock_actual', 0)}** | Ubicación: {p.get('ubicacion', 'N/A')}")
+                st.markdown("---")
+    else:
+        st.info("No hay productos registrados.")
+except Exception as e:
+    st.error(f"Error al cargar productos: {e}")
