@@ -36,7 +36,7 @@ except Exception as e:
 
 def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
-        return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit."
+        return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit o código."
     try:
         URL_APP = "https://inventario-movil-keqyrhd8mr25qkng7tdajx.streamlit.app"
 
@@ -75,6 +75,9 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
 
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
+
+if "items_remito" not in st.session_state:
+    st.session_state["items_remito"] = []
 
 # ==========================================
 # 1. LOGIN
@@ -128,6 +131,7 @@ st.sidebar.caption(f"Rol: **{user_actual.get('rol')}**")
 
 if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
     st.session_state["usuario"] = None
+    st.session_state["items_remito"] = []
     st.rerun()
 
 st.sidebar.markdown("---")
@@ -135,6 +139,7 @@ st.sidebar.markdown("---")
 if es_admin:
     opciones_menu = [
         "📦 Control de Inventario", 
+        "🧾 Generar Remito de Salida",
         "🔄 Movimientos (Entrada / Salida)", 
         "➕ Cargar Nuevo Producto", 
         "📄 Historial y Reporte Excel",
@@ -178,9 +183,9 @@ if opcion == "📦 Control de Inventario":
 
             # Seleccionar columnas a mostrar según rol
             if es_admin:
-                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "almacen", "ubicacion", "proveedor", "cliente"]
+                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion", "proveedor", "cliente"]
             else:
-                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "almacen", "ubicacion"]
+                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion"]
 
             cols_existentes = [c for c in cols_deseadas if c in df_prods.columns]
             df_prods = df_prods[cols_existentes]
@@ -188,7 +193,6 @@ if opcion == "📦 Control de Inventario":
             st.dataframe(df_prods, use_container_width=True, hide_index=True)
             st.caption(f"Mostrando {len(df_prods)} productos.")
 
-            # BOTÓN DE RESPALDO DE INVENTARIO PARA ADMIN
             if es_admin:
                 st.markdown("---")
                 try:
@@ -211,7 +215,130 @@ if opcion == "📦 Control de Inventario":
         st.error(f"Error al obtener el inventario: {e}")
 
 # ==========================================
-# 4. MOVIMIENTOS
+# 4. GENERAR REMITO DE SALIDA (NUEVA FUNCIÓN)
+# ==========================================
+elif opcion == "🧾 Generar Remito de Salida" and es_admin:
+    st.title("🧾 Generar Remito de Entrega / Salida")
+    
+    st.subheader("1. Datos del Destinatario / Cliente")
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
+        rem_cliente = st.text_input("Nombre del Cliente / Institución *")
+    with col_c2:
+        rem_localidad = st.text_input("Localidad / Dirección *")
+    with col_c3:
+        rem_contacto = st.text_input("Teléfono / Email de Contacto")
+        
+    st.markdown("---")
+    st.subheader("2. Agregar Productos al Remito")
+    
+    try:
+        prods_rem = supabase.table("productos").select("codigo, nombre, stock_actual, precio, moneda").execute().data
+        if prods_rem:
+            dict_prods_rem = {f"{p['codigo']} - {p['nombre']} (Stock: {p.get('stock_actual', 0)})": p for p in prods_rem}
+            
+            col_p1, col_p2, col_p3 = st.columns([3, 1, 1])
+            with col_p1:
+                p_sel = st.selectbox("Seleccionar Producto:", list(dict_prods_rem.keys()))
+            with col_p2:
+                p_cant = st.number_input("Cantidad:", min_value=1, value=1, key="cant_rem")
+            with col_p3:
+                st.write(" ")
+                st.write(" ")
+                btn_add_item = st.button("➕ Agregar Item", use_container_width=True)
+                
+            if btn_add_item:
+                prod_obj = dict_prods_rem[p_sel]
+                if p_cant > prod_obj.get("stock_actual", 0):
+                    st.error(f"Stock insuficiente para {prod_obj['nombre']}. Disponible: {prod_obj.get('stock_actual', 0)}")
+                else:
+                    # Verificar si ya está en la lista para sumar cantidad
+                    existente = False
+                    for item in st.session_state["items_remito"]:
+                        if item["codigo"] == prod_obj["codigo"]:
+                            item["cantidad"] += p_cant
+                            existente = True
+                            break
+                    if not existente:
+                        st.session_state["items_remito"].append({
+                            "codigo": prod_obj["codigo"],
+                            "nombre": prod_obj["nombre"],
+                            "cantidad": p_cant,
+                            "stock_actual": prod_obj.get("stock_actual", 0),
+                            "precio": prod_obj.get("precio", 0.0),
+                            "moneda": prod_obj.get("moneda", "ARS")
+                        })
+                    st.success(f"Item {prod_obj['nombre']} agregado al remito.")
+                    st.rerun()
+
+            # Mostrar Detalle del Remito Actual
+            if st.session_state["items_remito"]:
+                st.markdown("### 📋 Items en el Remito:")
+                df_rem_temp = pd.DataFrame(st.session_state["items_remito"])[["codigo", "nombre", "cantidad", "precio", "moneda"]]
+                st.dataframe(df_rem_temp, use_container_width=True, hide_index=True)
+                
+                c_del, c_proc = st.columns([1, 2])
+                with c_del:
+                    if st.button("🗑️ Limpiar Lista de Items"):
+                        st.session_state["items_remito"] = []
+                        st.rerun()
+                with c_proc:
+                    btn_confirmar_remito = st.button("✅ Confirmar Remito y Descontar Stock", type="primary", use_container_width=True)
+                    
+                if btn_confirmar_remito:
+                    if not rem_cliente or not rem_localidad:
+                        st.warning("Por favor completa el Nombre del Cliente y la Localidad.")
+                    else:
+                        nro_remito_gen = f"REM-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        
+                        # Procesar cada producto
+                        for item in st.session_state["items_remito"]:
+                            nuevo_stock = item["stock_actual"] - item["cantidad"]
+                            # Actualizar stock
+                            supabase.table("productos").update({"stock_actual": nuevo_stock}).eq("codigo", item["codigo"]).execute()
+                            
+                            # Registrar movimiento
+                            reg_mov = {
+                                "producto_codigo": item["codigo"],
+                                "producto_nombre": item["nombre"],
+                                "tipo": "SALIDA / REMITO",
+                                "cantidad": item["cantidad"],
+                                "stock_resultante": nuevo_stock,
+                                "responsable": user_actual.get("nombre"),
+                                "observacion": f"Remito {nro_remito_gen} - Destino: {rem_localidad} ({rem_contacto})"
+                            }
+                            supabase.table("movimientos_stock").insert(reg_mov).execute()
+
+                        st.success(f"🎉 Remito {nro_remito_gen} procesado con éxito. Stock actualizado.")
+                        
+                        # Generar texto / resumen para imprimir o copiar
+                        resumen_remito = f"""
+                        ==================================================
+                        🏥 MENDOMEDICA - REMITO DE ENTREGA: {nro_remito_gen}
+                        ==================================================
+                        Fecha: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}
+                        Cliente: {rem_cliente}
+                        Localidad: {rem_localidad}
+                        Contacto: {rem_contacto}
+                        Emitido por: {user_actual.get('nombre')}
+                        --------------------------------------------------
+                        DETALLE DE PRODUCTOS:
+                        """
+                        for it in st.session_state["items_remito"]:
+                            resumen_remito += f"\n• [{it['codigo']}] {it['nombre']} - Cantidad: {it['cantidad']}"
+                            
+                        resumen_remito += "\n\n--------------------------------------------------"
+                        resumen_remito += "\nFirma Conformidad Cliente: _______________________"
+                        
+                        st.text_area("📄 Copia de Remito para Imprimir / Enviar:", resumen_remito, height=250)
+                        
+                        # Resetear remito
+                        st.session_state["items_remito"] = []
+    except Exception as e:
+        st.error(f"Error en remitos: {e}")
+
+# ==========================================
+# 5. MOVIMIENTOS
 # ==========================================
 elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
     st.title("🔄 Registro de Entradas y Salidas")
@@ -260,7 +387,7 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
         st.error(f"Error al procesar movimiento: {e}")
 
 # ==========================================
-# 5. CARGAR PRODUCTO
+# 6. CARGAR PRODUCTO (CON MONEDA ARS / USD)
 # ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
     st.title("➕ Registrar Nuevo Producto")
@@ -274,7 +401,12 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
             categoria = st.text_input("Categoría")
             stock = st.number_input("Stock Inicial", min_value=0, value=0)
         with c2:
-            precio = st.number_input("Precio ($)", min_value=0.0, value=0.0)
+            col_prec, col_mon = st.columns([2, 1])
+            with col_prec:
+                precio = st.number_input("Precio", min_value=0.0, value=0.0)
+            with col_mon:
+                moneda = st.selectbox("Moneda", ["ARS", "USD"])
+                
             almacen = st.selectbox("Almacén / Unidad *", ["General", "Mendoza", "San Juan", "Endoscopia", "Quirófano"])
             ubicacion = st.text_input("Ubicación")
             proveedor = st.text_input("Proveedor")
@@ -289,17 +421,17 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
                 nuevo_prod = {
                     "codigo": codigo, "nombre": nombre, "codigo_barras": cod_barras,
                     "marca": marca, "categoria": categoria, "stock_actual": stock,
-                    "precio": precio, "almacen": almacen, "ubicacion": ubicacion,
-                    "proveedor": proveedor, "cliente": cliente
+                    "precio": precio, "moneda": moneda, "almacen": almacen, 
+                    "ubicacion": ubicacion, "proveedor": proveedor, "cliente": cliente
                 }
                 try:
                     supabase.table("productos").insert(nuevo_prod).execute()
-                    st.success(f"✅ Producto '{nombre}' registrado.")
+                    st.success(f"✅ Producto '{nombre}' registrado en {moneda}.")
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# 6. HISTORIAL Y EXCEL
+# 7. HISTORIAL Y EXCEL
 # ==========================================
 elif opcion == "📄 Historial y Reporte Excel" and es_admin:
     st.title("📄 Historial de Movimientos")
@@ -327,7 +459,7 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
         st.error(f"Error al cargar historial: {e}")
 
 # ==========================================
-# 7. GESTIÓN DE USUARIOS
+# 8. GESTIÓN DE USUARIOS
 # ==========================================
 elif opcion == "👥 Gestión de Usuarios" and es_admin:
     st.title("👥 Gestión de Usuarios")
