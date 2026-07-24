@@ -184,7 +184,26 @@ if opcion == "📦 Control de Inventario":
             st.info("No hay productos registrados.")
     except Exception as e:
         st.error(f"Error al obtener el inventario: {e}")
-
+# --- BOTÓN DE RESPALDO / BACKUP DEL INVENTARIO EN EXCEL ---
+if es_admin and prods:
+    st.markdown("---")
+    st.subheader("💾 Copia de Respaldo del Inventario")
+    
+    try:
+        df_backup = pd.DataFrame(prods)
+        
+        output_backup = io.BytesIO()
+        with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
+            df_backup.to_excel(writer, index=False, sheet_name='Inventario_Completo')
+            
+        st.download_button(
+            label="📥 Descargar Backup Completo del Inventario (.xlsx)",
+            data=output_backup.getvalue(),
+            file_name=f"Backup_Inventario_MendoMedica_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        st.error(f"Error al generar el respaldo: {e}")
 # 4. MOVIMIENTOS
 elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
     st.title("🔄 Registro de Entradas y Salidas")
