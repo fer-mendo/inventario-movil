@@ -7,7 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# Configuración de página para PC / Escritorio (Ancho completo)
+# Configuración de página optimizada para PC / Escritorio (Ancho completo)
 st.set_page_config(page_title="MendoMedica - Gestión de Inventario", page_icon="🏥", layout="wide")
 
 # Configuración de Supabase
@@ -17,8 +17,13 @@ SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
 # Configuración de Servidor SMTP para envío de correos
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "f.monneretscg@gmail.com"
-SMTP_PASSWORD = "lsmw ulmc efos muaj"  # Asegúrate de colocar tu Contraseña de Aplicación si utilizas envío directo
+SMTP_USER = "f.monneretssg@gmail.com"
+
+# Manejo seguro de la contraseña SMTP desde Secrets o Variable
+try:
+    SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
+except Exception:
+    SMTP_PASSWORD = "app_password_aqui"  # Tu contraseña de aplicación de 16 caracteres sin espacios
 
 @st.cache_resource
 def init_supabase():
@@ -49,8 +54,7 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
         Contraseña: {password}
         -------------------------------------------
 
-        Puedes acceder al sistema a través de los siguientes enlaces:
-        - Acceso Web / Móvil: https://inventariomendoapp.streamlit.app
+        Puedes acceder al sistema a través de la plataforma web.
 
         Por razones de seguridad, te sugerimos cambiar tu contraseña al ingresar.
 
@@ -100,7 +104,7 @@ if not st.session_state["usuario"]:
                     except Exception:
                         pass
 
-                    # 2. Buscar en Usuarios Móviles
+                    # 2. Buscar en Usuarios Móviles / Estándar
                     if not user_encontrado:
                         try:
                             res_movil = supabase.table("usuarios_movil").select("*").eq("email", email).eq("password", password).execute()
@@ -147,42 +151,60 @@ else:
 opcion = st.sidebar.radio("Navegación:", opciones_menu)
 
 # ==========================================
-# 3. CONTROL DE INVENTARIO (TABLA COMPLETA)
+# 3. CONTROL DE INVENTARIO (TABLA COMPLETA / ADAPTADA POR ROL)
 # ==========================================
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
-    col_busq, col_vacia = st.columns([2, 1])
+    col_busq, col_alm = st.columns([2, 1])
     with col_busq:
-        busqueda = st.text_input("🔍 Buscar por Nombre, Código o Código de Barras / N° Serie:")
+        busqueda = st.text_input("🔍 Buscar por Nombre, Código, Cód. Barras/Serie, Marca o Categoría:")
+    with col_alm:
+        almacen_sel = st.selectbox("🏬 Almacén / Unidad de Negocio:", ["Todos", "General", "Mendoza", "San Juan", "Endoscopia", "Quirófano"])
     
     try:
         prods = supabase.table("productos").select("*").execute().data
         if prods:
             df_prods = pd.DataFrame(prods)
             
+            # 1. Filtrar por Almacén si no es 'Todos'
+            if almacen_sel != "Todos" and "almacen" in df_prods.columns:
+                df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
+
+            # 2. Búsqueda combinada
             if busqueda:
                 b = busqueda.lower()
                 condicion = (
                     df_prods['nombre'].astype(str).str.lower().str.contains(b) |
                     df_prods['codigo'].astype(str).str.lower().str.contains(b) |
-                    df_prods.get('codigo_barras', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b)
+                    df_prods.get('codigo_barras', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b) |
+                    df_prods.get('marca', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b) |
+                    df_prods.get('categoria', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b)
                 )
                 df_prods = df_prods[condicion]
 
-            cols_deseadas = ["codigo", "codigo_barras", "nombre", "stock_actual", "precio", "ubicacion", "proveedor", "cliente"]
+            # 3. Definir columnas según el ROL (Ocultar Cliente y Proveedor para Usuarios Móviles)
+            if es_admin:
+                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "almacen", "ubicacion", "proveedor", "cliente"]
+            else:
+                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "almacen", "ubicacion"]
+
             cols_existentes = [c for c in cols_deseadas if c in df_prods.columns]
             df_prods = df_prods[cols_existentes]
             
+            # Renombrar columnas para la interfaz visual
             nombres_cols = {
                 "codigo": "Código",
                 "codigo_barras": "Cód. Barras / N° Serie",
                 "nombre": "Nombre / Descripción",
+                "marca": "Marca",
+                "categoria": "Categoría",
                 "stock_actual": "Stock Actual",
                 "precio": "Precio ($)",
+                "almacen": "Almacén / Unidad",
                 "ubicacion": "Ubicación",
                 "proveedor": "Proveedor",
-                "cliente": "Cliente/Resp."
+                "cliente": "Cliente / Resp."
             }
             df_prods = df_prods.rename(columns=nombres_cols)
             
@@ -247,7 +269,7 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
 # 5. CARGAR NUEVO PRODUCTO (SOLO ADMIN)
 # ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
-    st.title("➕ Cargar Nuevo Producto")
+    st.title("➕ Registrar Nuevo Producto")
     
     with st.form("form_alta_prod"):
         c1, c2 = st.columns(2)
@@ -255,25 +277,31 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
             codigo = st.text_input("Código de Producto *")
             nombre = st.text_input("Nombre / Descripción *")
             cod_barras = st.text_input("Código de Barras / N° Serie (Alfanumérico)")
+            marca = st.text_input("Marca")
+            categoria = st.text_input("Categoría (Ej: Endoscopia, Insumos, etc.)")
             stock = st.number_input("Stock Inicial", min_value=0, value=0)
         with c2:
             precio = st.number_input("Precio ($)", min_value=0.0, value=0.0)
+            almacen = st.selectbox("Almacén / Unidad de Negocio *", ["General", "Mendoza", "San Juan", "Endoscopia", "Quirófano"])
             ubicacion = st.text_input("Ubicación en Almacén")
             proveedor = st.text_input("Proveedor")
-            cliente = st.text_input("Cliente / Responsables")
+            cliente = st.text_input("Cliente / Responsable")
             
-        btn_alta = st.form_submit_button("Registrar Producto", use_container_width=True)
+        btn_alta = st.form_submit_button("Guardar Producto", use_container_width=True)
         
         if btn_alta:
             if not codigo or not nombre:
-                st.warning("El código y la descripción son campos obligatorios.")
+                st.warning("El código y la descripción son campos obligatorios (*)")
             else:
                 nuevo_prod = {
                     "codigo": codigo,
                     "nombre": nombre,
                     "codigo_barras": cod_barras,
+                    "marca": marca,
+                    "categoria": categoria,
                     "stock_actual": stock,
                     "precio": precio,
+                    "almacen": almacen,
                     "ubicacion": ubicacion,
                     "proveedor": proveedor,
                     "cliente": cliente
@@ -288,7 +316,7 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
 # 6. HISTORIAL Y REPORTE EXCEL (SOLO ADMIN)
 # ==========================================
 elif opcion == "📄 Historial y Reporte Excel" and es_admin:
-    st.title("📄 Historial de Movimientos y Exportación")
+    st.title("📄 Historial de Movimientos de Stock")
     
     try:
         historial = supabase.table("movimientos_stock").select("*").execute().data
@@ -298,7 +326,6 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
             cols_orden = [c for c in ["id", "created_at", "tipo", "producto_codigo", "producto_nombre", "cantidad", "stock_resultante", "responsable", "observacion"] if c in df_hist.columns]
             df_hist = df_hist[cols_orden]
 
-            # Intentar exportación a Excel (.xlsx) o fallback a CSV si falta la librería openpyxl
             try:
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -313,7 +340,7 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
                     type="primary"
                 )
             except ModuleNotFoundError:
-                st.warning("⚠️ La librería 'openpyxl' no está instalada en el servidor. Puedes descargar el reporte en CSV:")
+                st.warning("⚠️ Exportando en formato CSV alternativo:")
                 csv_bytes = df_hist.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Descargar Reporte en CSV",
@@ -352,7 +379,7 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                 sucursal = st.text_input("Sucursal / Sede (Opcional)")
                 enviar_mail = st.checkbox("Enviar correo de invitación con datos de acceso", value=True)
                 
-            btn_crear_user = st.form_submit_button("Crear Usuario e Enviar Invitación", use_container_width=True)
+            btn_crear_user = st.form_submit_button("Crear Usuario y Enviar Invitación", use_container_width=True)
             
             if btn_crear_user:
                 if not nuevo_nombre or not nuevo_email or not nueva_pass:
@@ -376,29 +403,63 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                             if ok_mail:
                                 st.info("📧 Correo de invitación enviado correctamente.")
                             else:
-                                st.warning(f"Usuario registrado, pero el correo no pudo enviarse: {msg_mail}")
+                                st.warning(f"Usuario registrado, pero no se pudo enviar el correo: {msg_mail}")
                     except Exception as e:
                         st.error(f"Error al registrar usuario: {e}")
 
-    # --- PESTAÑA 2: LISTA DE ADMINISTRADORES ---
+    # --- PESTAÑA 2: LISTA Y ELIMINACIÓN DE ADMINISTRADORES ---
     with tab2:
         st.subheader("Lista de Administradores")
         try:
-            admins = supabase.table("administradores").select("id, nombre, email, created_at").execute().data
+            admins = supabase.table("administradores").select("*").execute().data
             if admins:
-                st.dataframe(pd.DataFrame(admins), use_container_width=True, hide_index=True)
+                df_admins = pd.DataFrame(admins)
+                if "password" in df_admins.columns:
+                    df_admins = df_admins.drop(columns=["password"])
+                    
+                st.dataframe(df_admins, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                st.caption("🗑️ **Eliminar Administrador**")
+                
+                dict_admins = {f"{a.get('nombre', 'Admin')} ({a.get('email', 'Sin Email')})": a['id'] for a in admins if 'id' in a}
+                if dict_admins:
+                    admin_a_borrar = st.selectbox("Seleccionar Administrador a borrar:", list(dict_admins.keys()))
+                    
+                    if st.button("❌ Borrar Administrador Seleccionado"):
+                        id_borrar = dict_admins[admin_a_borrar]
+                        supabase.table("administradores").delete().eq("id", id_borrar).execute()
+                        st.success("✅ Administrador eliminado con éxito.")
+                        st.rerun()
             else:
                 st.info("No hay administradores registrados.")
         except Exception as e:
             st.error(f"Error al cargar administradores: {e}")
 
-    # --- PESTAÑA 3: LISTA DE USUARIOS MÓVILES ---
+    # --- PESTAÑA 3: LISTA Y ELIMINACIÓN DE USUARIOS MÓVILES ---
     with tab3:
         st.subheader("Lista de Usuarios Móviles")
         try:
-            moviles = supabase.table("usuarios_movil").select("id, nombre, email, sucursal, created_at").execute().data
+            moviles = supabase.table("usuarios_movil").select("*").execute().data
             if moviles:
-                st.dataframe(pd.DataFrame(moviles), use_container_width=True, hide_index=True)
+                df_moviles = pd.DataFrame(moviles)
+                if "password" in df_moviles.columns:
+                    df_moviles = df_moviles.drop(columns=["password"])
+                    
+                st.dataframe(df_moviles, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                st.caption("🗑️ **Eliminar Usuario Móvil**")
+                
+                dict_moviles = {f"{m.get('nombre', 'Usuario')} ({m.get('email', 'Sin Email')})": m['id'] for m in moviles if 'id' in m}
+                if dict_moviles:
+                    user_a_borrar = st.selectbox("Seleccionar Usuario a borrar:", list(dict_moviles.keys()))
+                    
+                    if st.button("❌ Borrar Usuario Seleccionado"):
+                        id_borrar_m = dict_moviles[user_a_borrar]
+                        supabase.table("usuarios_movil").delete().eq("id", id_borrar_m).execute()
+                        st.success("✅ Usuario eliminado con éxito.")
+                        st.rerun()
             else:
                 st.info("No hay usuarios móviles registrados.")
         except Exception as e:
