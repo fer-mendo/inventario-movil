@@ -38,6 +38,7 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
         return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit o código."
     try:
+        # URL correcta de la aplicación
         URL_APP = "https://inventario-movil-keqyrhd8mr25qkng7tdajx.streamlit.app"
 
         msg = MIMEMultipart()
@@ -215,7 +216,7 @@ if opcion == "📦 Control de Inventario":
         st.error(f"Error al obtener el inventario: {e}")
 
 # ==========================================
-# 4. GENERAR REMITO DE SALIDA (NUEVA FUNCIÓN)
+# 4. GENERAR REMITO DE SALIDA
 # ==========================================
 elif opcion == "🧾 Generar Remito de Salida" and es_admin:
     st.title("🧾 Generar Remito de Entrega / Salida")
@@ -252,7 +253,6 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
                 if p_cant > prod_obj.get("stock_actual", 0):
                     st.error(f"Stock insuficiente para {prod_obj['nombre']}. Disponible: {prod_obj.get('stock_actual', 0)}")
                 else:
-                    # Verificar si ya está en la lista para sumar cantidad
                     existente = False
                     for item in st.session_state["items_remito"]:
                         if item["codigo"] == prod_obj["codigo"]:
@@ -271,7 +271,6 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
                     st.success(f"Item {prod_obj['nombre']} agregado al remito.")
                     st.rerun()
 
-            # Mostrar Detalle del Remito Actual
             if st.session_state["items_remito"]:
                 st.markdown("### 📋 Items en el Remito:")
                 df_rem_temp = pd.DataFrame(st.session_state["items_remito"])[["codigo", "nombre", "cantidad", "precio", "moneda"]]
@@ -291,13 +290,10 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
                     else:
                         nro_remito_gen = f"REM-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
                         
-                        # Procesar cada producto
                         for item in st.session_state["items_remito"]:
                             nuevo_stock = item["stock_actual"] - item["cantidad"]
-                            # Actualizar stock
                             supabase.table("productos").update({"stock_actual": nuevo_stock}).eq("codigo", item["codigo"]).execute()
                             
-                            # Registrar movimiento
                             reg_mov = {
                                 "producto_codigo": item["codigo"],
                                 "producto_nombre": item["nombre"],
@@ -311,7 +307,6 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
 
                         st.success(f"🎉 Remito {nro_remito_gen} procesado con éxito. Stock actualizado.")
                         
-                        # Generar texto / resumen para imprimir o copiar
                         resumen_remito = f"""
                         ==================================================
                         🏥 MENDOMEDICA - REMITO DE ENTREGA: {nro_remito_gen}
@@ -332,7 +327,6 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
                         
                         st.text_area("📄 Copia de Remito para Imprimir / Enviar:", resumen_remito, height=250)
                         
-                        # Resetear remito
                         st.session_state["items_remito"] = []
     except Exception as e:
         st.error(f"Error en remitos: {e}")
