@@ -36,6 +36,9 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
         return False, "No se ha configurado la contraseña de correo en los Secrets de Streamlit."
     try:
+        # URL oficial de tu aplicación en Streamlit Cloud
+        URL_APP = "https://inventario-movil-keqyrhd8mr25qkng7tdajx.streamlit.app"
+
         msg = MIMEMultipart()
         msg['From'] = SMTP_USER
         msg['To'] = email_destino
@@ -51,6 +54,9 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
         Correo: {email_destino}
         Contraseña: {password}
         -------------------------------------------
+
+        🔗 Accede al sistema aquí:
+        {URL_APP}
 
         Atentamente,
         Equipo MendoMedica
