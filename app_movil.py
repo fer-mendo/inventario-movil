@@ -39,7 +39,7 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
         return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit o código."
     try:
         # URL correcta de la aplicación
-        URL_APP = "https://inventario-movil-keqyrhd8mr25qkng7tdajx.streamlit.app"
+        URL_APP = "https://inventariomendoapp.streamlit.app/"
 
         msg = MIMEMultipart()
         msg['From'] = SMTP_USER
@@ -491,7 +491,10 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                             else:
                                 st.warning(f"Usuario guardado pero falló el correo: {msg_mail}")
                     except Exception as e:
-                        st.error(f"Error al registrar: {e}")
+                        if "duplicate key" in str(e) or "already exists" in str(e):
+                            st.error(f"⚠️ El correo '{nuevo_email}' ya se encuentra registrado. Elimínalo en las pestañas correspondientes si deseas crearlo de nuevo.")
+                        else:
+                            st.error(f"Error al registrar: {e}")
 
     with tab2:
         try:
