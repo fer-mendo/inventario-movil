@@ -7,16 +7,18 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-st.set_page_config(page_title="MendoMedica - Gestión de Inventario", page_icon="🏥", layout="wide")
+# Configuración de página
+st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layout="wide")
 
+# Configuración de Supabase
 SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
 SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
 
+# Configuración SMTP (Gmail)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USER = "f.monneretscg@gmail.com"
 
-# Toma la contraseña de los Secrets de Streamlit Cloud
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
@@ -34,9 +36,8 @@ except Exception as e:
 
 def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
-        return False, "No se ha configurado la contraseña de correo en los Secrets de Streamlit."
+        return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit."
     try:
-        # URL oficial de tu aplicación en Streamlit Cloud
         URL_APP = "https://inventario-movil-keqyrhd8mr25qkng7tdajx.streamlit.app"
 
         msg = MIMEMultipart()
@@ -75,7 +76,9 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
+# ==========================================
 # 1. LOGIN
+# ==========================================
 if not st.session_state["usuario"]:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -113,7 +116,9 @@ if not st.session_state["usuario"]:
                     st.error("❌ Credenciales incorrectas.")
     st.stop()
 
-# 2. NAVEGACIÓN
+# ==========================================
+# 2. NAVEGACIÓN Y PANEL LATERAL
+# ==========================================
 user_actual = st.session_state["usuario"]
 es_admin = user_actual.get("rol") == "Administrador"
 
@@ -140,7 +145,9 @@ else:
 
 opcion = st.sidebar.radio("Navegación:", opciones_menu)
 
+# ==========================================
 # 3. CONTROL DE INVENTARIO
+# ==========================================
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
@@ -169,7 +176,7 @@ if opcion == "📦 Control de Inventario":
                 )
                 df_prods = df_prods[condicion]
 
-            # Ocultar Proveedor y Cliente para Usuarios Móviles
+            # Seleccionar columnas a mostrar según rol
             if es_admin:
                 cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "almacen", "ubicacion", "proveedor", "cliente"]
             else:
@@ -180,37 +187,38 @@ if opcion == "📦 Control de Inventario":
             
             st.dataframe(df_prods, use_container_width=True, hide_index=True)
             st.caption(f"Mostrando {len(df_prods)} productos.")
+
+            # BOTÓN DE RESPALDO DE INVENTARIO PARA ADMIN
+            if es_admin:
+                st.markdown("---")
+                try:
+                    df_backup = pd.DataFrame(prods)
+                    output_backup = io.BytesIO()
+                    with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
+                        df_backup.to_excel(writer, index=False, sheet_name='Inventario_Completo')
+                        
+                    st.download_button(
+                        label="💾 Descargar Respaldo Completo de Inventario (.xlsx)",
+                        data=output_backup.getvalue(),
+                        file_name=f"Backup_Inventario_MendoMedica_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                except Exception as e:
+                    st.warning(f"No se pudo generar el archivo Excel de respaldo: {e}")
         else:
             st.info("No hay productos registrados.")
     except Exception as e:
         st.error(f"Error al obtener el inventario: {e}")
-# --- BOTÓN DE RESPALDO / BACKUP DEL INVENTARIO EN EXCEL ---
-if es_admin and prods:
-    st.markdown("---")
-    st.subheader("💾 Copia de Respaldo del Inventario")
-    
-    try:
-        df_backup = pd.DataFrame(prods)
-        
-        output_backup = io.BytesIO()
-        with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
-            df_backup.to_excel(writer, index=False, sheet_name='Inventario_Completo')
-            
-        st.download_button(
-            label="📥 Descargar Backup Completo del Inventario (.xlsx)",
-            data=output_backup.getvalue(),
-            file_name=f"Backup_Inventario_MendoMedica_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    except Exception as e:
-        st.error(f"Error al generar el respaldo: {e}")
+
+# ==========================================
 # 4. MOVIMIENTOS
+# ==========================================
 elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
     st.title("🔄 Registro de Entradas y Salidas")
     try:
-        prods = supabase.table("productos").select("codigo, nombre, stock_actual").execute().data
-        if prods:
-            dict_prods = {f"{p['codigo']} - {p['nombre']} (Stock: {p.get('stock_actual', 0)})": p for p in prods}
+        prods_mov = supabase.table("productos").select("codigo, nombre, stock_actual").execute().data
+        if prods_mov:
+            dict_prods = {f"{p['codigo']} - {p['nombre']} (Stock: {p.get('stock_actual', 0)})": p for p in prods_mov}
             
             with st.form("form_mov"):
                 c1, c2 = st.columns(2)
@@ -251,7 +259,9 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
     except Exception as e:
         st.error(f"Error al procesar movimiento: {e}")
 
+# ==========================================
 # 5. CARGAR PRODUCTO
+# ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
     st.title("➕ Registrar Nuevo Producto")
     with st.form("form_alta_prod"):
@@ -288,7 +298,9 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
 
+# ==========================================
 # 6. HISTORIAL Y EXCEL
+# ==========================================
 elif opcion == "📄 Historial y Reporte Excel" and es_admin:
     st.title("📄 Historial de Movimientos")
     try:
@@ -301,7 +313,7 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
                 df_hist.to_excel(writer, index=False, sheet_name='Movimientos')
             
             st.download_button(
-                label="📥 Descargar Reporte en Excel (.xlsx)",
+                label="📥 Descargar Reporte de Movimientos en Excel (.xlsx)",
                 data=output.getvalue(),
                 file_name=f"Reporte_Movimientos_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -314,7 +326,9 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
     except Exception as e:
         st.error(f"Error al cargar historial: {e}")
 
+# ==========================================
 # 7. GESTIÓN DE USUARIOS
+# ==========================================
 elif opcion == "👥 Gestión de Usuarios" and es_admin:
     st.title("👥 Gestión de Usuarios")
     tab1, tab2, tab3 = st.tabs(["➕ Nuevo Usuario", "👑 Administradores", "📱 Usuarios Móviles"])
