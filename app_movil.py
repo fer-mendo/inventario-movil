@@ -23,7 +23,7 @@ SMTP_USER = "f.monneretscg@gmail.com"
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "lsmw ulmc efos muaj"  # Tu contraseña de aplicación de 16 caracteres sin espacios
+    SMTP_PASSWORD = "lsmwulmcefosmuaj"  # Tu contraseña de aplicación de 16 caracteres sin espacios
 
 @st.cache_resource
 def init_supabase():
