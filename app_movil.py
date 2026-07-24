@@ -17,13 +17,13 @@ SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
 # Configuración de Servidor SMTP para envío de correos
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "f.monneretssg@gmail.com"
+SMTP_USER = "f.monneretscg@gmail.com"
 
 # Manejo seguro de la contraseña SMTP desde Secrets o Variable
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "app_password_aqui"  # Tu contraseña de aplicación de 16 caracteres sin espacios
+    SMTP_PASSWORD = "lsmw ulmc efos muaj"  # Tu contraseña de aplicación de 16 caracteres sin espacios
 
 @st.cache_resource
 def init_supabase():
