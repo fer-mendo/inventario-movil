@@ -17,8 +17,8 @@ SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
 # Configuración de Servidor SMTP para envío de correos
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "f.monneretssg@gmail.com"
-SMTP_PASSWORD = "app_password_here"  # Asegúrate de colocar tu Contraseña de Aplicación si utilizas envío directo
+SMTP_USER = "f.monneretscg@gmail.com"
+SMTP_PASSWORD = "lsmw ulmc efos muaj"  # Asegúrate de colocar tu Contraseña de Aplicación si utilizas envío directo
 
 @st.cache_resource
 def init_supabase():
