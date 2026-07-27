@@ -10,6 +10,19 @@ from email.mime.multipart import MIMEMultipart
 # Configuración de página
 st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layout="wide")
 
+# ==============================================================================
+# 🏬 LISTA MAESTRA DE ALMACENES
+# Modifica, agrega o elimina los nombres de almacenes en esta lista:
+# ==============================================================================
+LISTA_ALMACENES = [
+    "General", 
+    "Olympus", 
+    "Pentax", 
+    "Aohua", 
+    "Aquilo", 
+    "SportMedical"
+]
+
 # Configuración de Supabase
 SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
 SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
@@ -38,7 +51,6 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
         return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit o código."
     try:
-        # URL correcta de la aplicación
         URL_APP = "https://inventariomendoapp.streamlit.app/"
 
         msg = MIMEMultipart()
@@ -73,6 +85,34 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
         return True, "Correo enviado correctamente."
     except Exception as e:
         return False, str(e)
+
+def generar_excel_seguro(df, nombre_hoja="Datos"):
+    """
+    Intenta generar un Excel con openpyxl / xlsxwriter.
+    Si no está instalado el motor, genera un CSV descargable como fallback sin lanzar errores.
+    """
+    output = io.BytesIO()
+    motor_usado = None
+    
+    # Probar openpyxl primero
+    try:
+        import openpyxl
+        motor_usado = 'openpyxl'
+    except ImportError:
+        try:
+            import xlsxwriter
+            motor_usado = 'xlsxwriter'
+        except ImportError:
+            motor_usado = None
+
+    if motor_usado:
+        with pd.ExcelWriter(output, engine=motor_usado) as writer:
+            df.to_excel(writer, index=False, sheet_name=nombre_hoja)
+        return output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+    else:
+        # Fallback seguro a CSV si no hay librería Excel
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        return csv_data, "text/csv", "csv"
 
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
@@ -157,19 +197,42 @@ opcion = st.sidebar.radio("Navegación:", opciones_menu)
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
+    # Determinar qué almacenes puede ver el usuario
+    if es_admin:
+        almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
+    else:
+        raw_perm = user_actual.get("almacenes_permitidos", "")
+        if raw_perm:
+            permitidos = [a.strip() for a in raw_perm.split(",") if a.strip()]
+            almacenes_disponibles = ["Todos los permitidos"] + permitidos
+        else:
+            almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
+
     col_busq, col_alm = st.columns([2, 1])
     with col_busq:
         busqueda = st.text_input("🔍 Buscar por Nombre, Código, Cód. Barras, Marca o Categoría:")
     with col_alm:
-        almacen_sel = st.selectbox("🏬 Almacén / Unidad:", ["Todos", "General", "Mendoza", "San Juan", "Endoscopia", "Quirófano"])
+        almacen_sel = st.selectbox("🏬 Almacén / Unidad:", almacenes_disponibles)
     
     try:
-        prods = supabase.table("productos").select("*").execute().data
+        res_prods = supabase.table("productos").select("*").execute()
+        prods = res_prods.data if res_prods else []
+        
         if prods:
             df_prods = pd.DataFrame(prods)
             
-            if almacen_sel != "Todos" and "almacen" in df_prods.columns:
-                df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
+            # Filtrado por Almacén
+            if "almacen" in df_prods.columns:
+                if es_admin:
+                    if almacen_sel != "Todos":
+                        df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
+                else:
+                    if almacen_sel == "Todos los permitidos":
+                        if raw_perm:
+                            permitidos_lower = [a.lower() for a in permitidos]
+                            df_prods = df_prods[df_prods['almacen'].astype(str).str.lower().isin(permitidos_lower)]
+                    else:
+                        df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
 
             if busqueda:
                 b = busqueda.lower()
@@ -182,34 +245,30 @@ if opcion == "📦 Control de Inventario":
                 )
                 df_prods = df_prods[condicion]
 
-            # Seleccionar columnas a mostrar según rol
+            # Columnas según rol
             if es_admin:
                 cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion", "proveedor", "cliente"]
             else:
                 cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion"]
 
             cols_existentes = [c for c in cols_deseadas if c in df_prods.columns]
-            df_prods = df_prods[cols_existentes]
+            df_prods_mostrar = df_prods[cols_existentes]
             
-            st.dataframe(df_prods, use_container_width=True, hide_index=True)
-            st.caption(f"Mostrando {len(df_prods)} productos.")
+            st.dataframe(df_prods_mostrar, use_container_width=True, hide_index=True)
+            st.caption(f"Mostrando {len(df_prods_mostrar)} productos.")
 
             if es_admin:
                 st.markdown("---")
                 try:
-                    df_backup = pd.DataFrame(prods)
-                    output_backup = io.BytesIO()
-                    with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
-                        df_backup.to_excel(writer, index=False, sheet_name='Inventario_Completo')
-                        
+                    file_data, mime_type, ext = generar_excel_seguro(pd.DataFrame(prods), nombre_hoja="Inventario")
                     st.download_button(
-                        label="💾 Descargar Respaldo Completo de Inventario (.xlsx)",
-                        data=output_backup.getvalue(),
-                        file_name=f"Backup_Inventario_MendoMedica_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        label=f"💾 Descargar Respaldo Completo de Inventario (.{ext.upper()})",
+                        data=file_data,
+                        file_name=f"Backup_Inventario_MendoMedica_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.{ext}",
+                        mime=mime_type
                     )
                 except Exception as e:
-                    st.warning(f"No se pudo generar el archivo Excel de respaldo: {e}")
+                    st.warning(f"No se pudo generar el archivo de respaldo: {e}")
         else:
             st.info("No hay productos registrados.")
     except Exception as e:
@@ -381,7 +440,7 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
         st.error(f"Error al procesar movimiento: {e}")
 
 # ==========================================
-# 6. CARGAR PRODUCTO (CON MONEDA ARS / USD)
+# 6. CARGAR PRODUCTO
 # ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
     st.title("➕ Registrar Nuevo Producto")
@@ -401,7 +460,7 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
             with col_mon:
                 moneda = st.selectbox("Moneda", ["ARS", "USD"])
                 
-            almacen = st.selectbox("Almacén / Unidad *", ["General", "Mendoza", "San Juan", "Endoscopia", "Quirófano"])
+            almacen = st.selectbox("Almacén / Unidad *", LISTA_ALMACENES)
             ubicacion = st.text_input("Ubicación")
             proveedor = st.text_input("Proveedor")
             cliente = st.text_input("Cliente / Responsable")
@@ -433,16 +492,13 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
         historial = supabase.table("movimientos_stock").select("*").execute().data
         if historial:
             df_hist = pd.DataFrame(historial)
-            
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_hist.to_excel(writer, index=False, sheet_name='Movimientos')
+            file_data, mime_type, ext = generar_excel_seguro(df_hist, nombre_hoja="Movimientos")
             
             st.download_button(
-                label="📥 Descargar Reporte de Movimientos en Excel (.xlsx)",
-                data=output.getvalue(),
-                file_name=f"Reporte_Movimientos_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                label=f"📥 Descargar Reporte de Movimientos (.{ext.upper()})",
+                data=file_data,
+                file_name=f"Reporte_Movimientos_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.{ext}",
+                mime=mime_type,
                 type="primary"
             )
             st.markdown("---")
@@ -468,7 +524,13 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                 tipo_rol = st.selectbox("Rol *", ["Administrador", "Usuario Móvil"])
             with c2:
                 nueva_pass = st.text_input("Contraseña *", type="password")
-                sucursal = st.text_input("Sucursal")
+                sucursal = st.text_input("Sucursal / Referencia")
+                
+                almacenes_seleccionados = st.multiselect(
+                    "🏬 Almacenes Permitidos (solo para Usuario Móvil):",
+                    options=LISTA_ALMACENES,
+                    default=[LISTA_ALMACENES[0]] if LISTA_ALMACENES else []
+                )
                 enviar_mail = st.checkbox("Enviar invitación por correo", value=True)
                 
             if st.form_submit_button("Crear Usuario", use_container_width=True):
@@ -478,8 +540,11 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                     try:
                         tabla = "administradores" if tipo_rol == "Administrador" else "usuarios_movil"
                         datos = {"nombre": nuevo_nombre, "email": nuevo_email, "password": nueva_pass}
-                        if tipo_rol == "Usuario Móvil" and sucursal:
-                            datos["sucursal"] = sucursal
+                        
+                        if tipo_rol == "Usuario Móvil":
+                            if sucursal:
+                                datos["sucursal"] = sucursal
+                            datos["almacenes_permitidos"] = ", ".join(almacenes_seleccionados)
                             
                         supabase.table(tabla).insert(datos).execute()
                         st.success(f"✅ Usuario registrado como {tipo_rol}.")
@@ -492,7 +557,7 @@ elif opcion == "👥 Gestión de Usuarios" and es_admin:
                                 st.warning(f"Usuario guardado pero falló el correo: {msg_mail}")
                     except Exception as e:
                         if "duplicate key" in str(e) or "already exists" in str(e):
-                            st.error(f"⚠️ El correo '{nuevo_email}' ya se encuentra registrado. Elimínalo en las pestañas correspondientes si deseas crearlo de nuevo.")
+                            st.error(f"⚠️ El correo '{nuevo_email}' ya se encuentra registrado.")
                         else:
                             st.error(f"Error al registrar: {e}")
 
