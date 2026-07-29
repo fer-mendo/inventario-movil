@@ -34,7 +34,7 @@ SMTP_USER = "f.monneretscg@gmail.com"
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "lvhvlaxhljowjezs"
+    SMTP_PASSWORD = "uioq wtei odsk teou"
 
 @st.cache_resource
 def init_supabase():
@@ -78,6 +78,7 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
+        # Se remueven espacios en blanco de la contraseña de aplicación
         server.login(SMTP_USER, SMTP_PASSWORD.replace(" ", ""))
         server.send_message(msg)
         server.quit()
@@ -245,18 +246,15 @@ if opcion == "📦 Control de Inventario":
 
             # Selección y orden de columnas visibles según Rol
             if es_admin:
-                # El administrador ve absolutamente TODAS las columnas
                 cols_prioritarias = [
                     "codigo", "codigo_barras", "nombre", "marca", "categoria", 
                     "stock_actual", "precio", "moneda", "costo", "moneda_costo", 
                     "estado", "almacen", "ubicacion", "proveedor", "cliente"
                 ]
                 cols_existentes = [c for c in cols_prioritarias if c in df_prods.columns]
-                # Agregar cualquier otra columna extra que exista en Supabase y no estuviera en la lista
                 otras_cols = [c for c in df_prods.columns if c not in cols_existentes and c != 'id']
                 df_prods_mostrar = df_prods[cols_existentes + otras_cols]
             else:
-                # El usuario móvil NO ve costo, moneda_costo, estado, proveedor ni cliente
                 cols_excluidas = ["costo", "moneda_costo", "estado", "proveedor", "cliente", "id"]
                 df_prods_mostrar = df_prods.drop(columns=[c for c in cols_excluidas if c in df_prods.columns])
 
