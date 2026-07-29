@@ -12,15 +12,14 @@ st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layo
 
 # ==============================================================================
 # 🏬 LISTA MAESTRA DE ALMACENES
-# Modifica, agrega o elimina los nombres de almacenes en esta lista:
 # ==============================================================================
 LISTA_ALMACENES = [
     "General", 
-    "Olympus", 
-    "Pentax", 
-    "Aohua", 
-    "Aquilo", 
-    "SportMedical"
+    "Mendoza", 
+    "San Juan", 
+    "Endoscopia", 
+    "Quirófano", 
+    "Central"
 ]
 
 # Configuración de Supabase
@@ -35,7 +34,7 @@ SMTP_USER = "f.monneretscg@gmail.com"
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "lvhvlaxhljowjezs"
+    SMTP_PASSWORD = "lsmwulmcefosmuaj"
 
 @st.cache_resource
 def init_supabase():
@@ -87,14 +86,9 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
         return False, str(e)
 
 def generar_excel_seguro(df, nombre_hoja="Datos"):
-    """
-    Intenta generar un Excel con openpyxl / xlsxwriter.
-    Si no está instalado el motor, genera un CSV descargable como fallback sin lanzar errores.
-    """
     output = io.BytesIO()
     motor_usado = None
     
-    # Probar openpyxl primero
     try:
         import openpyxl
         motor_usado = 'openpyxl'
@@ -110,7 +104,6 @@ def generar_excel_seguro(df, nombre_hoja="Datos"):
             df.to_excel(writer, index=False, sheet_name=nombre_hoja)
         return output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
     else:
-        # Fallback seguro a CSV si no hay librería Excel
         csv_data = df.to_csv(index=False).encode('utf-8')
         return csv_data, "text/csv", "csv"
 
@@ -197,7 +190,6 @@ opcion = st.sidebar.radio("Navegación:", opciones_menu)
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
-    # Determinar qué almacenes puede ver el usuario
     if es_admin:
         almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
     else:
@@ -210,7 +202,7 @@ if opcion == "📦 Control de Inventario":
 
     col_busq, col_alm = st.columns([2, 1])
     with col_busq:
-        busqueda = st.text_input("🔍 Buscar por Nombre, Código, Cód. Barras, Marca o Categoría:")
+        busqueda = st.text_input("🔍 Buscar por Nombre, Código, Cód. Barras, Marca, Categoría o Estado:")
     with col_alm:
         almacen_sel = st.selectbox("🏬 Almacén / Unidad:", almacenes_disponibles)
     
@@ -241,13 +233,18 @@ if opcion == "📦 Control de Inventario":
                     df_prods['codigo'].astype(str).str.lower().str.contains(b) |
                     df_prods.get('codigo_barras', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b) |
                     df_prods.get('marca', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b) |
-                    df_prods.get('categoria', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b)
+                    df_prods.get('categoria', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b) |
+                    df_prods.get('estado', pd.Series(['']*len(df_prods))).astype(str).str.lower().str.contains(b)
                 )
                 df_prods = df_prods[condicion]
 
-            # Columnas según rol
+            # Columnas visibles según el ROL (Costo, Moneda Costo, Estado, Proveedor y Cliente SOLO Administrador)
             if es_admin:
-                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion", "proveedor", "cliente"]
+                cols_deseadas = [
+                    "codigo", "codigo_barras", "nombre", "marca", "categoria", 
+                    "stock_actual", "precio", "moneda", "costo", "moneda_costo", 
+                    "estado", "almacen", "ubicacion", "proveedor", "cliente"
+                ]
             else:
                 cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion"]
 
@@ -440,7 +437,7 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
         st.error(f"Error al procesar movimiento: {e}")
 
 # ==========================================
-# 6. CARGAR PRODUCTO
+# 6. CARGAR PRODUCTO (CON COSTO Y ESTADO INDEPENDIENTES)
 # ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
     st.title("➕ Registrar Nuevo Producto")
@@ -453,12 +450,21 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
             marca = st.text_input("Marca")
             categoria = st.text_input("Categoría")
             stock = st.number_input("Stock Inicial", min_value=0, value=0)
+            estado = st.selectbox("Estado del Producto *", ["Stock disponible", "Servicio técnico", "Préstamo"])
+            
         with c2:
-            col_prec, col_mon = st.columns([2, 1])
+            st.markdown("**Precios y Monedas Independientes:**")
+            col_prec, col_mon_p = st.columns([2, 1])
             with col_prec:
-                precio = st.number_input("Precio", min_value=0.0, value=0.0)
-            with col_mon:
-                moneda = st.selectbox("Moneda", ["ARS", "USD"])
+                precio = st.number_input("Precio de Venta", min_value=0.0, value=0.0)
+            with col_mon_p:
+                moneda_precio = st.selectbox("Moneda Venta", ["ARS", "USD"])
+                
+            col_cost, col_mon_c = st.columns([2, 1])
+            with col_cost:
+                costo = st.number_input("Costo", min_value=0.0, value=0.0)
+            with col_mon_c:
+                moneda_costo = st.selectbox("Moneda Costo", ["ARS", "USD"])
                 
             almacen = st.selectbox("Almacén / Unidad *", LISTA_ALMACENES)
             ubicacion = st.text_input("Ubicación")
@@ -472,14 +478,25 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
                 st.warning("Completa los campos obligatorios (*)")
             else:
                 nuevo_prod = {
-                    "codigo": codigo, "nombre": nombre, "codigo_barras": cod_barras,
-                    "marca": marca, "categoria": categoria, "stock_actual": stock,
-                    "precio": precio, "moneda": moneda, "almacen": almacen, 
-                    "ubicacion": ubicacion, "proveedor": proveedor, "cliente": cliente
+                    "codigo": codigo, 
+                    "nombre": nombre, 
+                    "codigo_barras": cod_barras,
+                    "marca": marca, 
+                    "categoria": categoria, 
+                    "stock_actual": stock,
+                    "precio": precio, 
+                    "moneda": moneda_precio,
+                    "costo": costo,
+                    "moneda_costo": moneda_costo,
+                    "estado": estado, 
+                    "almacen": almacen, 
+                    "ubicacion": ubicacion, 
+                    "proveedor": proveedor, 
+                    "cliente": cliente
                 }
                 try:
                     supabase.table("productos").insert(nuevo_prod).execute()
-                    st.success(f"✅ Producto '{nombre}' registrado en {moneda}.")
+                    st.success(f"✅ Producto '{nombre}' registrado correctamente.")
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
 
