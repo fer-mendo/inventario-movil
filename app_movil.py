@@ -213,6 +213,11 @@ if opcion == "📦 Control de Inventario":
         if prods:
             df_prods = pd.DataFrame(prods)
             
+            # Limpiar comillas simples si quedaron grabadas como texto por defecto
+            for col_str in ["moneda_costo", "estado"]:
+                if col_str in df_prods.columns:
+                    df_prods[col_str] = df_prods[col_str].astype(str).str.replace("'", "")
+
             # Filtrado por Almacén
             if "almacen" in df_prods.columns:
                 if es_admin:
@@ -238,19 +243,23 @@ if opcion == "📦 Control de Inventario":
                 )
                 df_prods = df_prods[condicion]
 
-            # Columnas visibles según el ROL (Costo, Moneda Costo, Estado, Proveedor y Cliente SOLO Administrador)
+            # Selección y orden de columnas visibles según Rol
             if es_admin:
-                cols_deseadas = [
+                # El administrador ve absolutamente TODAS las columnas
+                cols_prioritarias = [
                     "codigo", "codigo_barras", "nombre", "marca", "categoria", 
                     "stock_actual", "precio", "moneda", "costo", "moneda_costo", 
                     "estado", "almacen", "ubicacion", "proveedor", "cliente"
                 ]
+                cols_existentes = [c for c in cols_prioritarias if c in df_prods.columns]
+                # Agregar cualquier otra columna extra que exista en Supabase y no estuviera en la lista
+                otras_cols = [c for c in df_prods.columns if c not in cols_existentes and c != 'id']
+                df_prods_mostrar = df_prods[cols_existentes + otras_cols]
             else:
-                cols_deseadas = ["codigo", "codigo_barras", "nombre", "marca", "categoria", "stock_actual", "precio", "moneda", "almacen", "ubicacion"]
+                # El usuario móvil NO ve costo, moneda_costo, estado, proveedor ni cliente
+                cols_excluidas = ["costo", "moneda_costo", "estado", "proveedor", "cliente", "id"]
+                df_prods_mostrar = df_prods.drop(columns=[c for c in cols_excluidas if c in df_prods.columns])
 
-            cols_existentes = [c for c in cols_deseadas if c in df_prods.columns]
-            df_prods_mostrar = df_prods[cols_existentes]
-            
             st.dataframe(df_prods_mostrar, use_container_width=True, hide_index=True)
             st.caption(f"Mostrando {len(df_prods_mostrar)} productos.")
 
