@@ -11,6 +11,12 @@ from email.mime.multipart import MIMEMultipart
 st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layout="wide")
 
 # ==============================================================================
+# 🖼️ ARCHIVO DEL LOGO DE LA EMPRESA
+# ==============================================================================
+# Nombre del archivo guardado en el repositorio de GitHub
+URL_LOGO = "logo.png" 
+
+# ==============================================================================
 # 🏬 LISTA MAESTRA DE ALMACENES
 # ==============================================================================
 LISTA_ALMACENES = [
@@ -114,13 +120,18 @@ if "items_remito" not in st.session_state:
     st.session_state["items_remito"] = []
 
 # ==========================================
-# 1. LOGIN
+# 1. LOGIN CON LOGO
 # ==========================================
 if not st.session_state["usuario"]:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.title("🏥 MendoMedica")
-        st.subheader("Acceso al Sistema")
+        try:
+            st.image(URL_LOGO, use_container_width=True)
+        except Exception:
+            st.title("🏥 MendoMedica")
+            
+        st.subheader("Sistema de Gestión e Inventario")
+        st.caption("Portal Institucional de Control de Stock")
         
         with st.form("form_login"):
             email = st.text_input("Correo Electrónico").strip().lower()
@@ -154,12 +165,16 @@ if not st.session_state["usuario"]:
     st.stop()
 
 # ==========================================
-# 2. NAVEGACIÓN Y PANEL LATERAL
+# 2. NAVEGACIÓN Y PANEL LATERAL CON LOGO
 # ==========================================
 user_actual = st.session_state["usuario"]
 es_admin = user_actual.get("rol") == "Administrador"
 
-st.sidebar.title("🏥 MendoMedica")
+try:
+    st.sidebar.image(URL_LOGO, use_container_width=True)
+except Exception:
+    st.sidebar.title("🏥 MendoMedica")
+
 st.sidebar.write(f"👤 **{user_actual.get('nombre', 'Usuario')}**")
 st.sidebar.caption(f"Rol: **{user_actual.get('rol')}**")
 
@@ -233,7 +248,6 @@ if opcion == "📦 Control de Inventario":
                         df_prods = df_prods[df_prods['almacen'].str.lower() == almacen_sel.lower()]
                 else:
                     if not permitidos_lista:
-                        # Si el usuario móvil no tiene almacenes asignados
                         df_prods = df_prods.iloc[0:0]
                     else:
                         permitidos_lower = [a.lower() for a in permitidos_lista]
