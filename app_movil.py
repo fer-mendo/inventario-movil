@@ -15,11 +15,11 @@ st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layo
 # ==============================================================================
 LISTA_ALMACENES = [
     "General", 
-    "Mendoza", 
-    "San Juan", 
-    "Endoscopia", 
-    "Quirófano", 
-    "Central"
+    "Olympus", 
+    "Pentax", 
+    "Aohua", 
+    "Aquilo", 
+    "SportMedical"
 ]
 
 # Configuración de Supabase
