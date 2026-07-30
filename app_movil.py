@@ -78,7 +78,6 @@ def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
-        # Se remueven espacios en blanco de la contraseña de aplicación
         server.login(SMTP_USER, SMTP_PASSWORD.replace(" ", ""))
         server.send_message(msg)
         server.quit()
@@ -191,15 +190,21 @@ opcion = st.sidebar.radio("Navegación:", opciones_menu)
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
+    # Determinación de almacenes permitidos según rol
+    raw_perm = user_actual.get("almacenes_permitidos", "")
     if es_admin:
         almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
+        permitidos_lista = LISTA_ALMACENES
     else:
-        raw_perm = user_actual.get("almacenes_permitidos", "")
         if raw_perm:
-            permitidos = [a.strip() for a in raw_perm.split(",") if a.strip()]
-            almacenes_disponibles = ["Todos los permitidos"] + permitidos
+            permitidos_lista = [a.strip() for a in str(raw_perm).split(",") if a.strip()]
         else:
-            almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
+            permitidos_lista = []
+            
+        if permitidos_lista:
+            almacenes_disponibles = ["Todos los permitidos"] + permitidos_lista
+        else:
+            almacenes_disponibles = ["Sin almacenes asignados"]
 
     col_busq, col_alm = st.columns([2, 1])
     with col_busq:
@@ -214,25 +219,34 @@ if opcion == "📦 Control de Inventario":
         if prods:
             df_prods = pd.DataFrame(prods)
             
-            # Limpiar comillas simples si quedaron grabadas como texto por defecto
-            for col_str in ["moneda_costo", "estado"]:
+            # Limpiar comillas o formato en columnas de texto
+            for col_str in ["moneda_costo", "estado", "almacen"]:
                 if col_str in df_prods.columns:
-                    df_prods[col_str] = df_prods[col_str].astype(str).str.replace("'", "")
+                    df_prods[col_str] = df_prods[col_str].astype(str).str.replace("'", "").str.strip()
 
-            # Filtrado por Almacén
+            # -----------------------------------------------------------------
+            # FILTRADO SEGÚN ALMACÉN Y PERMISOS DE USUARIO
+            # -----------------------------------------------------------------
             if "almacen" in df_prods.columns:
                 if es_admin:
                     if almacen_sel != "Todos":
-                        df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
+                        df_prods = df_prods[df_prods['almacen'].str.lower() == almacen_sel.lower()]
                 else:
-                    if almacen_sel == "Todos los permitidos":
-                        if raw_perm:
-                            permitidos_lower = [a.lower() for a in permitidos]
-                            df_prods = df_prods[df_prods['almacen'].astype(str).str.lower().isin(permitidos_lower)]
+                    if not permitidos_lista:
+                        # Si el usuario móvil no tiene almacenes asignados
+                        df_prods = df_prods.iloc[0:0]
                     else:
-                        df_prods = df_prods[df_prods['almacen'].astype(str).str.lower() == almacen_sel.lower()]
+                        permitidos_lower = [a.lower() for a in permitidos_lista]
+                        if almacen_sel == "Todos los permitidos":
+                            df_prods = df_prods[df_prods['almacen'].str.lower().isin(permitidos_lower)]
+                        else:
+                            if almacen_sel.lower() in permitidos_lower:
+                                df_prods = df_prods[df_prods['almacen'].str.lower() == almacen_sel.lower()]
+                            else:
+                                df_prods = df_prods.iloc[0:0]
 
-            if busqueda:
+            # Búsqueda por texto
+            if busqueda and not df_prods.empty:
                 b = busqueda.lower()
                 condicion = (
                     df_prods['nombre'].astype(str).str.lower().str.contains(b) |
@@ -256,7 +270,7 @@ if opcion == "📦 Control de Inventario":
                 df_prods_mostrar = df_prods[cols_existentes + otras_cols]
             else:
                 cols_excluidas = ["costo", "moneda_costo", "estado", "proveedor", "cliente", "id"]
-                df_prods_mostrar = df_prods.drop(columns=[c for c in cols_excluidas if c in df_prods.columns])
+                df_prods_mostrar = df_prods.drop(columns=[c for c in cols_excluidas if c in df_prods.columns], errors='ignore')
 
             st.dataframe(df_prods_mostrar, use_container_width=True, hide_index=True)
             st.caption(f"Mostrando {len(df_prods_mostrar)} productos.")
