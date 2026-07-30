@@ -34,7 +34,7 @@ SMTP_USER = "f.monneretscg@gmail.com"
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "uioq wtei odsk teou"
+    SMTP_PASSWORD = "uioqwteiodskteou"
 
 @st.cache_resource
 def init_supabase():
