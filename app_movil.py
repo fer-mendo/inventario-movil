@@ -13,8 +13,7 @@ st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layo
 # ==============================================================================
 # 🖼️ ARCHIVO DEL LOGO DE LA EMPRESA
 # ==============================================================================
-# Nombre del archivo guardado en el repositorio de GitHub
-URL_LOGO = "logo.png" 
+URL_LOGO = "logo.png.jpeg"
 
 # ==============================================================================
 # 🏬 LISTA MAESTRA DE ALMACENES
@@ -28,11 +27,16 @@ LISTA_ALMACENES = [
     "SportMedical"
 ]
 
-# Configuración de Supabase
-SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
-SUPABASE_KEY = "sb_secret_H1879_2HEXiHBASrVbLauA_wGvHP6kK"
+# ==============================================================================
+# 🔑 CONFIGURACIÓN SEGURA DE SUPABASE Y SMTP (SECRETS DE STREAMLIT)
+# ==============================================================================
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+except Exception:
+    SUPABASE_URL = "https://dsnjdrgtbhwkcxkfeipl.supabase.co"
+    SUPABASE_KEY = ""
 
-# Configuración SMTP (Gmail)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USER = "f.monneretscg@gmail.com"
@@ -40,7 +44,7 @@ SMTP_USER = "f.monneretscg@gmail.com"
 try:
     SMTP_PASSWORD = st.secrets["SMTP_PASSWORD"]
 except Exception:
-    SMTP_PASSWORD = "uioqwteiodskteou"
+    SMTP_PASSWORD = ""
 
 @st.cache_resource
 def init_supabase():
@@ -54,7 +58,7 @@ except Exception as e:
 
 def enviar_email_invitacion(email_destino, nombre_usuario, password, rol):
     if not SMTP_PASSWORD:
-        return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit o código."
+        return False, "Falta configurar SMTP_PASSWORD en los Secrets de Streamlit."
     try:
         URL_APP = "https://inventariomendoapp.streamlit.app/"
 
