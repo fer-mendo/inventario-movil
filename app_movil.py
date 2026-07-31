@@ -13,7 +13,7 @@ st.set_page_config(page_title="MendoMedica - Inventario", page_icon="🏥", layo
 # ==============================================================================
 # 🖼️ ARCHIVO DEL LOGO DE LA EMPRESA
 # ==============================================================================
-URL_LOGO = "logo.png.jpeg"
+URL_LOGO = "logo.png"
 
 # ==============================================================================
 # 🏬 LISTA MAESTRA DE ALMACENES
