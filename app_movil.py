@@ -4,6 +4,7 @@ import pandas as pd
 import io
 import datetime
 import smtplib
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -117,11 +118,124 @@ def generar_excel_seguro(df, nombre_hoja="Datos"):
         csv_data = df.to_csv(index=False).encode('utf-8')
         return csv_data, "text/csv", "csv"
 
+def generar_html_imprimible(cliente, equipo, modelo, serie, e1, tareas, e3, obs, conclusion, subtotal, iva, total, moneda, responsable):
+    filas_tareas = ""
+    for t in tareas:
+        filas_tareas += f"""
+        <tr>
+            <td style="text-align: center; border: 1px solid #000; padding: 6px;">1</td>
+            <td style="border: 1px solid #000; padding: 6px;">{t.get('descripcion', '')}</td>
+            <td style="text-align: right; border: 1px solid #000; padding: 6px;">{t.get('monto', 0.0):,.2f}</td>
+        </tr>
+        """
+        
+    e1_html = "<br>".join([f"• {line.strip('• ')}" for line in e1.split("\n") if line.strip()])
+    e3_html = "<br>".join([f"• {line.strip('• ')}" for line in e3.split("\n") if line.strip()])
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Informe Técnico - {cliente}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 30px; color: #000; line-height: 1.4; }}
+            .header {{ margin-bottom: 20px; }}
+            .title {{ font-size: 18px; font-weight: bold; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
+            th {{ border: 1px solid #000; background-color: #e6e6e6; padding: 8px; font-size: 13px; text-transform: uppercase; }}
+            .totales-table {{ width: 50%; float: right; margin-top: 5px; }}
+            .totales-table td {{ border: 1px solid #000; padding: 6px; font-size: 13px; }}
+            .clear {{ clear: both; }}
+            .section-box {{ border: 1px solid #000; padding: 10px; margin-top: 15px; background: #fafafa; }}
+            .btn-print {{ background: #0066cc; color: #fff; border: none; padding: 10px 20px; font-size: 14px; cursor: pointer; border-radius: 4px; margin-bottom: 20px; }}
+            @media print {{
+                .btn-print {{ display: none; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar en PDF</button>
+
+        <div class="header">
+            <p>Señor<br><strong>{cliente}</strong><br><u>Presente</u></p>
+            <p><strong>Estimado(a) {cliente}:</strong></p>
+            <p>De acuerdo a lo solicitado por Usted, a continuación ofrecemos nuestro presupuesto e informe de servicio técnico:</p>
+        </div>
+
+        <div style="font-weight: bold; text-decoration: underline; margin-bottom: 10px;">
+            {equipo} marca/modelo {modelo} - Serie N° {serie}:
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">CANTIDAD</th>
+                    <th style="width: 65%;">DESCRIPCIÓN REPARACIÓN</th>
+                    <th style="width: 25%;">PRECIO [{moneda}]</th>
+                </tr>
+            </thead>
+            <tbody>
+                {filas_tareas}
+            </tbody>
+        </table>
+
+        <table class="totales-table">
+            <tr>
+                <td><strong>SUBTOTAL</strong></td>
+                <td style="text-align: right;">{subtotal:,.2f}</td>
+            </tr>
+            <tr>
+                <td><strong>IVA 21%</strong></td>
+                <td style="text-align: right;">{iva:,.2f}</td>
+            </tr>
+            <tr>
+                <td><strong>TOTAL</strong></td>
+                <td style="text-align: right; font-weight: bold;">{total:,.2f}</td>
+            </tr>
+        </table>
+
+        <div class="clear"></div>
+
+        <div class="section-box">
+            <strong>📌 DIAGNÓSTICO E INSPECCIÓN INICIAL (ETAPA 1):</strong><br>
+            {e1_html}
+        </div>
+
+        <div class="section-box">
+            <strong>🧪 PRUEBAS Y CONTROL DE CALIDAD (ETAPA 3):</strong><br>
+            {e3_html}
+        </div>
+
+        <div class="section-box">
+            <strong>📝 OBSERVACIONES:</strong><br>
+            {obs if obs else 'Sin observaciones adicionales.'}
+        </div>
+
+        <div class="section-box">
+            <strong>🏁 INFORME DEFINITIVO / CONCLUSIÓN:</strong><br>
+            {conclusion if conclusion else 'Equipo probado y verificado conforme a parámetros de fábrica.'}
+        </div>
+
+        <br><br>
+        <p style="text-align: right; margin-top: 30px;">
+            ____________________________________<br>
+            <strong>MendoMedica - Servicio Técnico</strong><br>
+            Responsable: {responsable}
+        </p>
+    </body>
+    </html>
+    """
+    return html_content
+
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
 if "items_remito" not in st.session_state:
     st.session_state["items_remito"] = []
+
+if "tareas_st" not in st.session_state:
+    st.session_state["tareas_st"] = []
 
 # ==========================================
 # 1. LOGIN CON LOGO
@@ -192,6 +306,7 @@ st.sidebar.markdown("---")
 if es_admin:
     opciones_menu = [
         "📦 Control de Inventario", 
+        "🛠️ Servicio Técnico",
         "🧾 Generar Remito de Salida",
         "🔄 Movimientos (Entrada / Salida)", 
         "➕ Cargar Nuevo Producto", 
@@ -209,7 +324,6 @@ opcion = st.sidebar.radio("Navegación:", opciones_menu)
 if opcion == "📦 Control de Inventario":
     st.title("📦 Control de Inventario y Stock")
     
-    # Determinación de almacenes permitidos según rol
     raw_perm = user_actual.get("almacenes_permitidos", "")
     if es_admin:
         almacenes_disponibles = ["Todos"] + LISTA_ALMACENES
@@ -238,14 +352,10 @@ if opcion == "📦 Control de Inventario":
         if prods:
             df_prods = pd.DataFrame(prods)
             
-            # Limpiar comillas o formato en columnas de texto
             for col_str in ["moneda_costo", "estado", "almacen"]:
                 if col_str in df_prods.columns:
                     df_prods[col_str] = df_prods[col_str].astype(str).str.replace("'", "").str.strip()
 
-            # -----------------------------------------------------------------
-            # FILTRADO SEGÚN ALMACÉN Y PERMISOS DE USUARIO
-            # -----------------------------------------------------------------
             if "almacen" in df_prods.columns:
                 if es_admin:
                     if almacen_sel != "Todos":
@@ -263,7 +373,6 @@ if opcion == "📦 Control de Inventario":
                             else:
                                 df_prods = df_prods.iloc[0:0]
 
-            # Búsqueda por texto
             if busqueda and not df_prods.empty:
                 b = busqueda.lower()
                 condicion = (
@@ -276,7 +385,6 @@ if opcion == "📦 Control de Inventario":
                 )
                 df_prods = df_prods[condicion]
 
-            # Selección y orden de columnas visibles según Rol
             if es_admin:
                 cols_prioritarias = [
                     "codigo", "codigo_barras", "nombre", "marca", "categoria", 
@@ -311,7 +419,135 @@ if opcion == "📦 Control de Inventario":
         st.error(f"Error al obtener el inventario: {e}")
 
 # ==========================================
-# 4. GENERAR REMITO DE SALIDA
+# 4. SERVICIO TÉCNICO E INFORME IMPRIMIBLE
+# ==========================================
+elif opcion == "🛠️ Servicio Técnico" and es_admin:
+    st.title("🛠️ Informe y Presupuesto de Servicio Técnico")
+    tab_nuevo, tab_historial = st.tabs(["📝 Crear / Editar Informe", "📋 Historial de Informes"])
+    
+    with tab_nuevo:
+        st.subheader("1. Identificación del Cliente y Equipo")
+        col_st1, col_st2, col_st3 = st.columns(3)
+        with col_st1:
+            st_cliente = st.text_input("Cliente / Doctor *")
+            st_equipo = st.text_input("Equipo (Ej: Videocolonoscopio) *")
+        with col_st2:
+            st_marca_mod = st.text_input("Marca / Modelo (Ej: OLYMPUS PCF-H180AL)")
+            st_serie = st.text_input("N° de Serie *")
+        with col_st3:
+            st_moneda = st.selectbox("Moneda del Presupuesto", ["DÓLAR BILLETE", "USD", "ARS"])
+            st_estado = st.selectbox("Estado del Trabajo", ["En Inspección / Presupuesto", "En Reparación", "Finalizado / Entregado"])
+
+        st.markdown("---")
+        st.subheader("2. Proceso de Reparación en 3 Etapas (Editables)")
+        
+        st.markdown("##### 📌 **Etapa 1: Recepción y Desarme Inicial**")
+        e1_diag = st.text_area("Detalle de Recepción / Diagnóstico de Desarme:", 
+                               value="• Desarme completo del endoscopio\n• Secado del endoscopio por ingreso de fluidos\n• Limpieza y lubricación de partes internas",
+                               height=100)
+        
+        st.markdown("##### 🔧 **Etapa 2: Trabajos, Repuestos y Cotización**")
+        
+        col_t1, col_t2 = st.columns([3, 1])
+        with col_t1:
+            nueva_tarea = st.text_input("Descripción de Reparación / Repuesto:")
+        with col_t2:
+            monto_tarea = st.number_input("Precio Item:", min_value=0.0, value=0.0, step=10.0)
+            
+        if st.button("➕ Agregar Item a la Reparación"):
+            if nueva_tarea:
+                st.session_state["tareas_st"].append({"descripcion": nueva_tarea, "monto": monto_tarea})
+                st.rerun()
+
+        if st.session_state["tareas_st"]:
+            df_st_temp = pd.DataFrame(st.session_state["tareas_st"])
+            st.dataframe(df_st_temp, use_container_width=True, hide_index=True)
+            
+            subtotal_st = sum(item["monto"] for item in st.session_state["tareas_st"])
+            if st.button("🗑️ Limpiar Tabla de Items"):
+                st.session_state["tareas_st"] = []
+                st.rerun()
+        else:
+            subtotal_st = 0.0
+
+        iva_st = subtotal_st * 0.21
+        total_st = subtotal_st + iva_st
+        
+        col_tot1, col_tot2, col_tot3 = st.columns(3)
+        col_tot1.metric("SUBTOTAL", f"{subtotal_st:,.2f} {st_moneda}")
+        col_tot2.metric("IVA (21%)", f"{iva_st:,.2f} {st_moneda}")
+        col_tot3.metric("TOTAL", f"{total_st:,.2f} {st_moneda}")
+
+        st.markdown("##### 🧪 **Etapa 3: Calibración y Control de Calidad**")
+        e3_pruebas = st.text_area("Pruebas de Funcionamiento y QA:", 
+                                  value="• Armado correcto del equipo\n• Recableado y soldadura de circuitos\n• Calibración general de angulación\n• Test de fugas superado exitosamente",
+                                  height=100)
+
+        st.markdown("---")
+        st.subheader("3. Observaciones y Conclusión Final (Feedback Global)")
+        col_obs1, col_obs2 = st.columns(2)
+        with col_obs1:
+            st_obs = st.text_area("Observaciones Generales:", height=120, placeholder="Notas sobre el uso, recomendaciones de manejo o garantías...")
+        with col_obs2:
+            st_conclusion = st.text_area("Informe Definitivo / Conclusión:", height=120, placeholder="Resultado final del proceso técnico para el cliente...")
+
+        if st.button("💾 Guardar y Generar Informe de Servicio Técnico", type="primary", use_container_width=True):
+            if not st_cliente or not st_equipo:
+                st.warning("Por favor completa el Cliente y el Equipo.")
+            else:
+                registro_st = {
+                    "cliente": st_cliente,
+                    "equipo": st_equipo,
+                    "modelo": st_marca_mod,
+                    "numero_serie": st_serie,
+                    "etapa1_diagnostico": e1_diag,
+                    "etapa2_trabajos": json.dumps(st.session_state["tareas_st"]),
+                    "etapa3_pruebas": e3_pruebas,
+                    "observaciones": st_obs,
+                    "conclusion_final": st_conclusion,
+                    "subtotal": subtotal_st,
+                    "iva": iva_st,
+                    "total": total_st,
+                    "moneda": st_moneda,
+                    "estado": st_estado,
+                    "responsable": user_actual.get("nombre")
+                }
+                
+                try:
+                    supabase.table("informes_servicio_tecnico").insert(registro_st).execute()
+                    st.success("✅ Informe guardado con éxito en Supabase.")
+                    
+                    # Generación de HTML con formato de impresión profesional
+                    html_doc = generar_html_imprimible(
+                        st_cliente, st_equipo, st_marca_mod, st_serie,
+                        e1_diag, st.session_state["tareas_st"], e3_pruebas,
+                        st_obs, st_conclusion, subtotal_st, iva_st, total_st,
+                        st_moneda, user_actual.get("nombre")
+                    )
+                    
+                    st.download_button(
+                        label="📄 Descargar Presupuesto Imprimible (PDF/HTML)",
+                        data=html_doc,
+                        file_name=f"Presupuesto_ST_{st_cliente}_{datetime.datetime.now().strftime('%Y%m%d')}.html",
+                        mime="text/html",
+                        type="primary"
+                    )
+                except Exception as e:
+                    st.error(f"Error al guardar en Supabase: {e}")
+
+    with tab_historial:
+        try:
+            res_hist = supabase.table("informes_servicio_tecnico").select("*").execute().data
+            if res_hist:
+                df_st_hist = pd.DataFrame(res_hist)
+                st.dataframe(df_st_hist, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay informes de servicio técnico registrados aún.")
+        except Exception as e:
+            st.error(f"Error al cargar historial: {e}")
+
+# ==========================================
+# 5. GENERAR REMITO DE SALIDA
 # ==========================================
 elif opcion == "🧾 Generar Remito de Salida" and es_admin:
     st.title("🧾 Generar Remito de Entrega / Salida")
@@ -427,7 +663,7 @@ elif opcion == "🧾 Generar Remito de Salida" and es_admin:
         st.error(f"Error en remitos: {e}")
 
 # ==========================================
-# 5. MOVIMIENTOS
+# 6. MOVIMIENTOS
 # ==========================================
 elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
     st.title("🔄 Registro de Entradas y Salidas")
@@ -476,7 +712,7 @@ elif opcion == "🔄 Movimientos (Entrada / Salida)" and es_admin:
         st.error(f"Error al procesar movimiento: {e}")
 
 # ==========================================
-# 6. CARGAR PRODUCTO (CON COSTO Y ESTADO INDEPENDIENTES)
+# 7. CARGAR PRODUCTO
 # ==========================================
 elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
     st.title("➕ Registrar Nuevo Producto")
@@ -540,7 +776,7 @@ elif opcion == "➕ Cargar Nuevo Producto" and es_admin:
                     st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# 7. HISTORIAL Y EXCEL
+# 8. HISTORIAL Y EXCEL
 # ==========================================
 elif opcion == "📄 Historial y Reporte Excel" and es_admin:
     st.title("📄 Historial de Movimientos")
@@ -565,7 +801,7 @@ elif opcion == "📄 Historial y Reporte Excel" and es_admin:
         st.error(f"Error al cargar historial: {e}")
 
 # ==========================================
-# 8. GESTIÓN DE USUARIOS
+# 9. GESTIÓN DE USUARIOS
 # ==========================================
 elif opcion == "👥 Gestión de Usuarios" and es_admin:
     st.title("👥 Gestión de Usuarios")
